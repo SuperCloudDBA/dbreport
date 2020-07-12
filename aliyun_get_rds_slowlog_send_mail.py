@@ -410,9 +410,9 @@ class GetReport:
 
 class CloudCareMail:
     def __init__(self, **kwargs):
-        self.from_user = "operator@jiagouyun.com"
+        self.from_user = "operator@xxx.com"
         self.to_users = kwargs['to_users']
-        self.host = "smtp.jiagouyun.com"
+        self.host = "smtp.xxx.com"
         self.tbody = kwargs['tbody']
         self.msg = MIMEMultipart('related')
         self.InstanceId = kwargs['InstanceId']
@@ -433,7 +433,7 @@ class CloudCareMail:
             server = smtplib.SMTP_SSL(host=self.host)
             server.connect(self.host, port="465")
             server.set_debuglevel(1)
-            server.login(self.from_user, "ZYops,./0412")
+            server.login(self.from_user, "xxx")
             server.sendmail(self.from_user, self.to_users, self.msg.as_string())
             server.quit()
             print("发送成功")
