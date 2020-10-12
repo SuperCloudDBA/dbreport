@@ -71,105 +71,187 @@ class GetInfo:
         """
         数据库后端逻辑
         """
+        #数据库
+        dtname = '''select datname from pg_database where datname not in ($$template0$$, $$template1$$)'''
+        #连接数
         connnections = '''select max_conn 最大连接数, now_conn 当前连接数, max_conn-now_conn 剩余连接数 from (select setting::int8 as max_conn,(select count(*) from pg_stat_activity) as now_conn from pg_settings where name = 'max_connections') t;'''
-        age_large = ''' select
-        datname, age(datfrozenxid) as age
-        from pg_database where
-        age(datfrozenxid) > 1000000000
-        order
-        by
-        2
-        desc;'''
-        select_age = '''select relname,age(relfrozenxid) as age,pg_relation_size(oid)/1024/1024/1024.0 table_size from pg_class where relkind='r' and age(relfrozenxid)>800000000 and pg_relation_size(oid)/1024/1024/1024.0 > 10 order by 3 desc;'''
-        index_large = '''select t2.nspname, t1.relname, t3.idx_cnt from pg_class t1, pg_namespace t2, (select indrelid,count(*) idx_cnt from pg_index group by 1 having count(*)>4) t3 where t1.oid=t3.indrelid and t1.relnamespace=t2.oid and pg_relation_size(t1.oid)/1024/1024.0>10 order by t3.idx_cnt desc;'''
-        unuse_index = '''select t2.schemaname,t2.relname,t2.indexrelname,t2.idx_scan,t2.idx_tup_read,t2.idx_tup_fetch,pg_relation_size(indexrelid) as pg_relation_size from pg_stat_all_tables t1,pg_stat_all_indexes t2 where t1.relid=t2.relid and t2.idx_scan<1000 and t2.schemaname not in ('pg_toast','pg_catalog') and indexrelid not in (select conindid from pg_constraint where contype in ('p','u')) and pg_relation_size(indexrelid)>6553600 order by pg_relation_size(indexrelid) desc;'''
-        partition_table = '''SELECT
-    nspname ,
-    relname ,
-    COUNT(*) AS partition_num
-FROM
-    pg_class c ,
-    pg_namespace n ,
-    pg_inherits i
-WHERE
-    c.oid = i.inhparent
-    AND c.relnamespace = n.oid
-    AND c.relhassubclass
-    AND c.relkind = 'r'
-GROUP BY 1,2  ORDER BY partition_num DESC;'''
-        expand = '''select * from 
-(
-SELECT
-  current_database() AS db, schemaname, tablename, reltuples::bigint AS tups, relpages::bigint AS pages, otta,
-  ROUND(CASE WHEN otta=0 OR sml.relpages=0 OR sml.relpages=otta THEN 0.0 ELSE sml.relpages/otta::numeric END,1) AS tbloat,
-  CASE WHEN relpages < otta THEN 0 ELSE relpages::bigint - otta END AS wastedpages,
-  CASE WHEN relpages < otta THEN 0 ELSE bs*(sml.relpages-otta)::bigint END AS wastedbytes,
-  CASE WHEN relpages < otta THEN '0 bytes'::text ELSE (bs*(relpages-otta))::bigint || ' bytes' END AS wastedsize,
-  iname, ituples::bigint AS itups, ipages::bigint AS ipages, iotta,
-  ROUND(CASE WHEN iotta=0 OR ipages=0 OR ipages=iotta THEN 0.0 ELSE ipages/iotta::numeric END,1) AS ibloat,
-  CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS wastedipages,
-  CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS wastedibytes,
-  CASE WHEN ipages < iotta THEN '0 bytes' ELSE (bs*(ipages-iotta))::bigint || ' bytes' END AS wastedisize,
-  CASE WHEN relpages < otta THEN
-    CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta::bigint) END
-    ELSE CASE WHEN ipages < iotta THEN bs*(relpages-otta::bigint)
-      ELSE bs*(relpages-otta::bigint + ipages-iotta::bigint) END
-  END AS totalwastedbytes
-FROM (
-  SELECT
-    nn.nspname AS schemaname,
-    cc.relname AS tablename,
-    COALESCE(cc.reltuples,0) AS reltuples,
-    COALESCE(cc.relpages,0) AS relpages,
-    COALESCE(bs,0) AS bs,
-    COALESCE(CEIL((cc.reltuples*((datahdr+ma-
-      (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,
-    COALESCE(c2.relname,'?') AS iname, COALESCE(c2.reltuples,0) AS ituples, COALESCE(c2.relpages,0) AS ipages,
-    COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols
-  FROM
-     pg_class cc
-  JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> 'information_schema'
-  LEFT JOIN
-  (
-    SELECT
-      ma,bs,foo.nspname,foo.relname,
-      (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,
-      (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2
-    FROM (
-      SELECT
-        ns.nspname, tbl.relname, hdr, ma, bs,
-        SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,
-        MAX(coalesce(null_frac,0)) AS maxfracsum,
-        hdr+(
-          SELECT 1+count(*)/8
-          FROM pg_stats s2
-          WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname
-        ) AS nullhdr
-      FROM pg_attribute att 
-      JOIN pg_class tbl ON att.attrelid = tbl.oid
-      JOIN pg_namespace ns ON ns.oid = tbl.relnamespace 
-      LEFT JOIN pg_stats s ON s.schemaname=ns.nspname
-      AND s.tablename = tbl.relname
-      AND s.inherited=false
-      AND s.attname=att.attname,
-      (
-        SELECT
-          (SELECT current_setting('block_size')::numeric) AS bs,
-            CASE WHEN SUBSTRING(SPLIT_PART(v, ' ', 2) FROM '#"[0-9]+.[0-9]+#"%' for '#')
-              IN ('8.0','8.1','8.2') THEN 27 ELSE 23 END AS hdr,
-          CASE WHEN v ~ 'mingw32' OR v ~ '64-bit' THEN 8 ELSE 4 END AS ma
-        FROM (SELECT version() AS v) AS foo
-      ) AS constants
-      WHERE att.attnum > 0 AND tbl.relkind='r'
-      GROUP BY 1,2,3,4,5
-    ) AS foo
-  ) AS rs
-  ON cc.relname = rs.relname AND nn.nspname = rs.nspname
-  LEFT JOIN pg_index i ON indrelid = cc.oid
-  LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid
-) AS sml ORDER BY totalwastedbytes DESC
-) t where totalwastedbytes/1024/1024 > 1024;'''
-        refuse = '''select schemaname,relname,n_live_tup,n_dead_tup from pg_stat_all_tables where n_live_tup>0 and n_dead_tup/n_live_tup>0.2 and schemaname not in ('pg_toast','pg_catalog') and n_live_tup>100000 or n_dead_tup>100000;'''
+        #数据年龄
+        data_age = ''' select datname, age(datfrozenxid) as age from pg_database order by 2 desc;'''
+        #年龄大于N的对象占用空间数，年龄大于12亿的数据库，占用的空间数
+        data_size = '''select COALESCE(pg_size_pretty(sum(pg_database_size(oid))),'') as pg_size_pretty from pg_database where age(datfrozenxid)>1200000000;'''
+        #表膨胀
+        surface_expansion = '''SELECT  
+  current_database() AS db, schemaname, tablename, reltuples::bigint AS tups, relpages::bigint AS pages, otta,  
+  ROUND(CASE WHEN otta=0 OR sml.relpages=0 OR sml.relpages=otta THEN 0.0 ELSE sml.relpages/otta::numeric END,1) AS tbloat,  
+  CASE WHEN relpages < otta THEN 0 ELSE relpages::bigint - otta END AS wastedpages,  
+  CASE WHEN relpages < otta THEN 0 ELSE bs*(sml.relpages-otta)::bigint END AS wastedbytes,  
+  CASE WHEN relpages < otta THEN $$0 bytes$$::text ELSE (bs*(relpages-otta))::bigint || $$ bytes$$ END AS wastedsize,  
+  iname, ituples::bigint AS itups, ipages::bigint AS ipages, iotta,  
+  ROUND(CASE WHEN iotta=0 OR ipages=0 OR ipages=iotta THEN 0.0 ELSE ipages/iotta::numeric END,1) AS ibloat,  
+  CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS wastedipages,  
+  CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS wastedibytes,  
+  CASE WHEN ipages < iotta THEN $$0 bytes$$ ELSE (bs*(ipages-iotta))::bigint || $$ bytes$$ END AS wastedisize,  
+  CASE WHEN relpages < otta THEN  
+    CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta::bigint) END  
+    ELSE CASE WHEN ipages < iotta THEN bs*(relpages-otta::bigint)  
+      ELSE bs*(relpages-otta::bigint + ipages-iotta::bigint) END  
+  END AS totalwastedbytes  
+FROM (  
+  SELECT  
+    nn.nspname AS schemaname,  
+    cc.relname AS tablename,  
+    COALESCE(cc.reltuples,0) AS reltuples,  
+    COALESCE(cc.relpages,0) AS relpages,  
+    COALESCE(bs,0) AS bs,  
+    COALESCE(CEIL((cc.reltuples*((datahdr+ma-  
+      (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,  
+    COALESCE(c2.relname,$$?$$) AS iname, COALESCE(c2.reltuples,0) AS ituples, COALESCE(c2.relpages,0) AS ipages,  
+    COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols  
+  FROM  
+     pg_class cc  
+  JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> $$information_schema$$  
+  LEFT JOIN  
+  (  
+    SELECT  
+      ma,bs,foo.nspname,foo.relname,  
+      (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,  
+      (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2  
+    FROM (  
+      SELECT  
+        ns.nspname, tbl.relname, hdr, ma, bs,  
+        SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,  
+        MAX(coalesce(null_frac,0)) AS maxfracsum,  
+        hdr+(  
+          SELECT 1+count(*)/8  
+          FROM pg_stats s2  
+          WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname  
+        ) AS nullhdr  
+      FROM pg_attribute att   
+      JOIN pg_class tbl ON att.attrelid = tbl.oid  
+      JOIN pg_namespace ns ON ns.oid = tbl.relnamespace   
+      LEFT JOIN pg_stats s ON s.schemaname=ns.nspname  
+      AND s.tablename = tbl.relname  
+      AND s.inherited=false  
+      AND s.attname=att.attname,  
+      (  
+        SELECT  
+          (SELECT current_setting($$block_size$$)::numeric) AS bs,  
+            CASE WHEN SUBSTRING(SPLIT_PART(v, $$ $$, 2) FROM $$#"[0-9]+.[0-9]+#"%$$ for $$#$$)  
+              IN ($$8.0$$,$$8.1$$,$$8.2$$) THEN 27 ELSE 23 END AS hdr,  
+          CASE WHEN v ~ $$mingw32$$ OR v ~ $$64-bit$$ THEN 8 ELSE 4 END AS ma  
+        FROM (SELECT version() AS v) AS foo  
+      ) AS constants  
+      WHERE att.attnum > 0 AND tbl.relkind=$$r$$  
+      GROUP BY 1,2,3,4,5  
+    ) AS foo  
+  ) AS rs  
+  ON cc.relname = rs.relname AND nn.nspname = rs.nspname  
+  LEFT JOIN pg_index i ON indrelid = cc.oid  
+  LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid  
+) AS sml order by wastedbytes desc limit 5'''
+        #索引膨胀
+        index_inflation = '''SELECT  
+  current_database() AS db, schemaname, tablename, reltuples::bigint AS tups, relpages::bigint AS pages, otta,  
+  ROUND(CASE WHEN otta=0 OR sml.relpages=0 OR sml.relpages=otta THEN 0.0 ELSE sml.relpages/otta::numeric END,1) AS tbloat,  
+  CASE WHEN relpages < otta THEN 0 ELSE relpages::bigint - otta END AS wastedpages,  
+  CASE WHEN relpages < otta THEN 0 ELSE bs*(sml.relpages-otta)::bigint END AS wastedbytes,  
+  CASE WHEN relpages < otta THEN $$0 bytes$$::text ELSE (bs*(relpages-otta))::bigint || $$ bytes$$ END AS wastedsize,  
+  iname, ituples::bigint AS itups, ipages::bigint AS ipages, iotta,  
+  ROUND(CASE WHEN iotta=0 OR ipages=0 OR ipages=iotta THEN 0.0 ELSE ipages/iotta::numeric END,1) AS ibloat,  
+  CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS wastedipages,  
+  CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS wastedibytes,  
+  CASE WHEN ipages < iotta THEN $$0 bytes$$ ELSE (bs*(ipages-iotta))::bigint || $$ bytes$$ END AS wastedisize,  
+  CASE WHEN relpages < otta THEN  
+    CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta::bigint) END  
+    ELSE CASE WHEN ipages < iotta THEN bs*(relpages-otta::bigint)  
+      ELSE bs*(relpages-otta::bigint + ipages-iotta::bigint) END  
+  END AS totalwastedbytes  
+FROM (  
+  SELECT  
+    nn.nspname AS schemaname,  
+    cc.relname AS tablename,  
+    COALESCE(cc.reltuples,0) AS reltuples,  
+    COALESCE(cc.relpages,0) AS relpages,  
+    COALESCE(bs,0) AS bs,  
+    COALESCE(CEIL((cc.reltuples*((datahdr+ma-  
+      (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,  
+    COALESCE(c2.relname,$$?$$) AS iname, COALESCE(c2.reltuples,0) AS ituples, COALESCE(c2.relpages,0) AS ipages,  
+    COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols  
+  FROM  
+     pg_class cc  
+  JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> $$information_schema$$  
+  LEFT JOIN  
+  (  
+    SELECT  
+      ma,bs,foo.nspname,foo.relname,  
+      (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,  
+      (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2  
+    FROM (  
+      SELECT  
+        ns.nspname, tbl.relname, hdr, ma, bs,  
+        SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,  
+        MAX(coalesce(null_frac,0)) AS maxfracsum,  
+        hdr+(  
+          SELECT 1+count(*)/8  
+          FROM pg_stats s2  
+          WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname  
+        ) AS nullhdr  
+      FROM pg_attribute att   
+      JOIN pg_class tbl ON att.attrelid = tbl.oid  
+      JOIN pg_namespace ns ON ns.oid = tbl.relnamespace   
+      LEFT JOIN pg_stats s ON s.schemaname=ns.nspname  
+      AND s.tablename = tbl.relname  
+      AND s.inherited=false  
+      AND s.attname=att.attname,  
+      (  
+        SELECT  
+          (SELECT current_setting($$block_size$$)::numeric) AS bs,  
+            CASE WHEN SUBSTRING(SPLIT_PART(v, $$ $$, 2) FROM $$#"[0-9]+.[0-9]+#"%$$ for $$#$$)  
+              IN ($$8.0$$,$$8.1$$,$$8.2$$) THEN 27 ELSE 23 END AS hdr,  
+          CASE WHEN v ~ $$mingw32$$ OR v ~ $$64-bit$$ THEN 8 ELSE 4 END AS ma  
+        FROM (SELECT version() AS v) AS foo  
+      ) AS constants  
+      WHERE att.attnum > 0 AND tbl.relkind=$$r$$  
+      GROUP BY 1,2,3,4,5  
+    ) AS foo  
+  ) AS rs  
+  ON cc.relname = rs.relname AND nn.nspname = rs.nspname  
+  LEFT JOIN pg_index i ON indrelid = cc.oid  
+  LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid  
+) AS sml order by wastedibytes desc limit 5'''
+        #未使用索引
+        unused_index = '''select current_database(),relid, indexrelid, schemaname, relname, indexrelname, idx_scan,
+                               idx_tup_read, idx_tup_fetch from pg_stat_all_indexes where idx_scan=0 or idx_tup_read=0 or idx_tup_fetch=0;'''
+        #未使用查询表
+        unused_query_table = '''select current_database(),relid,schemaname,relname,seq_scan,seq_tup_read,COALESCE(idx_scan,0) as idx_scan from pg_stat_all_tables where seq_scan=0 and idx_scan=0;'''
+        #热表
+        hot_table = '''select current_database(),relid,schemaname,relname,seq_scan,seq_tup_read,COALESCE(idx_scan,0) as idx_scan from pg_stat_all_tables order by seq_scan+idx_scan desc limit 10;'''
+        #冷表
+        cold_table = '''select current_database(),relid,schemaname,relname,seq_scan,seq_tup_read,COALESCE(idx_scan,0) as idx_scan from pg_stat_all_tables order by seq_scan+idx_scan limit 10;'''
+        #热索引
+        hot_index = '''select current_database(),current_database(),relid, indexrelid, schemaname, relname, indexrelname, idx_scan,
+                               idx_tup_read, idx_tup_fetch from pg_stat_all_indexes order by idx_scan desc limit 10;'''
+        #冷索引
+        cold_index = '''select current_database(),current_database(),relid, indexrelid, schemaname, relname, indexrelname, idx_scan,
+                               idx_tup_read, idx_tup_fetch from pg_stat_all_indexes order by idx_scan limit 10;'''
+        #全表扫描次数TOP对象
+        table_full_count = '''select current_database(),relid,schemaname,relname,seq_scan,seq_tup_read,COALESCE(idx_scan,0) as idx_scan from pg_stat_all_tables order by seq_scan desc limit 10;'''
+        #全表扫描返回记录数TOP对象
+        table_full_rows = '''select current_database(),relid,schemaname,relname,seq_scan,seq_tup_read,COALESCE(idx_scan,0) as idx_scan from pg_stat_all_tables order by seq_tup_read desc limit 10;'''
+
+        self.db_params = {
+            'postgresql'.lower(): [
+                {
+                    'type': 'dtname',
+                    'query': dtname,
+                    'desc': "数据库",
+                    'fields': ["数据库名"]
+                },
+            ],
+            # 'sqlserver': [{}],
+            # 'postgresql': [{}],
+            # 'oracle': [{}],
+        }
 
         self.sql_params = {
             'postgresql'.lower(): [
@@ -177,56 +259,112 @@ FROM (
                     'type': 'connnections',
                     'query': connnections,
                     'desc': "连接数",
-                    'fields': ["最大连接数", "当前连接数", "剩余连接数"]
+                    'fields': ["最大连接数", "当前连接数", "剩余连接数"],
+                    'zhixing': 'no'
                 },
                 {
-                    'type': 'age_large',
-                    'query': age_large,
-                    'desc': "年龄大于10亿的数据库",
-                    'fields': ["datname", "age"]
+                    'type': 'data_age',
+                    'query': data_age,
+                    'desc': "数据年龄",
+                    'fields': ["datname", "age"],
+                    'zhixing': 'no'
                 },
                 {
-                    'type': 'select_age',
-                    'query': select_age,
-                    'desc': "查询大于10GB以及年龄大于9亿的表",
-                    'fields': ["relname", "age", "table_size"]
+                    'type': 'data_size',
+                    'query': data_size,
+                    'desc': "年龄大于12亿占用的空间数",
+                    'fields': ["pg_size_pretty"],
+                    'zhixing': 'no'
                 },
                 {
-                    'type': 'index_large',
-                    'query': index_large,
-                    'desc': "查询索引数超过4并且SIZE大于10MB的表",
-                    'fields': ["nspname", "relname", "idx_cnt"]
+                    'type': 'surface_expansion',
+                    'query': surface_expansion,
+                    'desc': "表膨胀",
+                    'fields': ["db", "schemaname", "tablename", "tups", "pages", "otta", "tbloat", "wastedpages",
+                               "wastedbytes", "wastedsize", "iname", "itups", "ipages", "iotta", "ibloat",
+                               "wastedipages", "wastedibytes", "wastedisize", "totalwastedbytes"],
+                    'zhixing': 'yes'
                 },
                 {
-                    'type': 'unuse_index',
-                    'query': unuse_index,
-                    'desc': "上次巡检以来未使用或使用较少的索引  ",
-                    'fields': ["schemaname", "relname", "idx_scan","idx_tup_read","idx_tup_fetch","pg_relation_size"]
+                    'type': 'index_inflation',
+                    'query': index_inflation,
+                    'desc': "索引膨胀",
+                    'fields': ["db", "schemaname", "tablename", "tups", "pages", "otta", "tbloat", "wastedpages",
+                               "wastedbytes", "wastedsize", "iname", "itups", "ipages", "iotta", "ibloat",
+                               "wastedipages", "wastedibytes", "wastedisize", "totalwastedbytes"],
+                    'zhixing': 'yes'
                 },
                 {
-                    'type': 'partition_table',
-                    'query': partition_table,
-                    'desc': "分区表检查",
-                    'fields': ["nspname", "relname", "partition_num"]
+                    'type': 'unused_index',
+                    'query': unused_index,
+                    'desc': "未使用索引",
+                    'fields': ["当前数据库", "relid", "indexrelid", "schemaname", "relname", "indexrelname", "idx_scan",
+                               "idx_tup_read", "idx_tup_fetch"],
+                    'zhixing': 'yes'
                 },
                 {
-                    'type': 'expand',
-                    'query': expand,
-                    'desc': "膨胀检查",
-                    'fields': ["db", "schemaname", "tablename", "tups", "pages", "otta", "tbloat", "wastepages", "wastedbytes", "wastedsize", "iname", "itups", "ipages", "iotta", "ibloat", "wastedipages", "wastedibytes", "wastedisize", "totalwastedbytes"]
+                    'type': 'unused_query_table',
+                    'query': unused_query_table,
+                    'desc': "未使用查询表",
+                    'fields': ["当前数据库", "relid", "schemaname", "relname", "seq_scan", "seq_tup_read","idx_scan"],
+                    'zhixing': 'yes'
                 },
                 {
-                    'type': 'refuse',
-                    'query': refuse,
-                    'desc': "检查垃圾数据",
-                    'fields': ["schemaname", "relname", "n_live_tup","n_dead_tup"]
-                }
-
+                    'type': 'hot_table',
+                    'query': hot_table,
+                    'desc': "热表",
+                    'fields': ["当前数据库", "relid", "schemaname", "relname", "seq_scan", "seq_tup_read","idx_scan"],
+                    'zhixing': 'yes'
+                },
+                {
+                    'type': 'cold_table',
+                    'query': cold_table,
+                    'desc': "冷表",
+                    'fields': ["当前数据库", "relid", "schemaname", "relname", "seq_scan", "seq_tup_read","idx_scan"],
+                    'zhixing': 'yes'
+                },
+                {
+                    'type': 'hot_index',
+                    'query': hot_index,
+                    'desc': "热索引",
+                    'fields': ["当前数据库", "relid", "indexrelid", "schemaname", "relname", "indexrelname", "idx_scan",
+                               "idx_tup_read", "idx_tup_fetch"],
+                    'zhixing': 'yes'
+                },
+                {
+                    'type': 'cold_index',
+                    'query': cold_index,
+                    'desc': "冷索引",
+                    'fields': ["当前数据库", "relid", "indexrelid", "schemaname", "relname", "indexrelname", "idx_scan",
+                               "idx_tup_read", "idx_tup_fetch"],
+                    'zhixing': 'yes'
+                },
+                {
+                    'type': 'table_full_count',
+                    'query': table_full_count,
+                    'desc': "全表扫描次数TOP对象",
+                    'fields': ["当前数据库", "relid", "schemaname", "relname", "seq_scan", "seq_tup_read","idx_scan"],
+                    'zhixing': 'yes'
+                },
+                {
+                    'type': 'table_full_rows',
+                    'query': table_full_rows,
+                    'desc': "全表扫描返回记录数TOP对象",
+                    'fields': ["当前数据库", "relid", "schemaname", "relname", "seq_scan", "seq_tup_read","idx_scan"],
+                    'zhixing': 'yes'
+                },
             ],
             # 'sqlserver': [{}],
             # 'postgresql': [{}],
             # 'oracle': [{}],
         }
+
+    def get_dbinfo(self, engine):
+        """
+        根据指定的数据库类型 和 报告内容 进行过滤，返回过滤后的SQL
+        """
+        return list(self.db_params[engine])
+
 
     def get_info(self, engine, filter_infos):
         """
@@ -258,22 +396,51 @@ def starup(**kwargs):
     }
     # 1.根据传递的参数对报告后端逻辑进行过滤
     info_api = GetInfo()
+    db_list = info_api.get_dbinfo(kwargs['engine'])
     sql_list = info_api.get_info(kwargs['engine'], kwargs["info"])
     # print(json.dumps(sql_list, indent=2, ensure_ascii=False))
 
     # 2.获取待渲染的报告数据
+    db_api = PGHelper(**params)
+
+    for sql in db_list:
+        db_results = db_api.col_query(sql["query"])
+
     sql_api = PGHelper(**params)
     data = []
     for sql in sql_list:
-        sql_results = sql_api.col_query(sql["query"])
-        #sql["sql_result"] = sql_results
-        datajsons=[]
-        for sql_result in sql_results:
-            datajson=dict(zip(sql["fields"],sql_result))
-            datajsons.append(datajson)
-        sql["rows"]=json.loads(json.dumps(datajsons, cls=CJsonEncoder, ensure_ascii=False))
-        data.append(sql)
-    #print(json.dumps(data, cls=CJsonEncoder, ensure_ascii=False, indent=2))
+        if sql["zhixing"] == "yes":
+            datajsons = []
+            for dbname in db_results:
+                for db in dbname:
+                    params = {
+                        'url': kwargs['host'],
+                        'port': kwargs['port'],
+                        'username': kwargs['user'],
+                        'password': kwargs['password'],
+                        'dbname': db,
+                    }
+                    sql_api = PGHelper(**params)
+                sql_results = sql_api.col_query(sql["query"])
+                for sql_result in sql_results:
+                    datajson = dict(zip(sql["fields"], sql_result))
+                    datajsons.append(datajson)
+            sql["rows"] = json.loads(json.dumps(datajsons, cls=CJsonEncoder, ensure_ascii=False))
+            data.append(sql)
+            # print(json.dumps(data, cls=CJsonEncoder, ensure_ascii=False, indent=2))
+        else:
+            sql_results = sql_api.col_query(sql["query"])
+            # sql["sql_result"] = sql_results
+            datajsons = []
+            for sql_result in sql_results:
+                datajson = dict(zip(sql["fields"], sql_result))
+                datajsons.append(datajson)
+            sql["rows"] = json.loads(json.dumps(datajsons, cls=CJsonEncoder, ensure_ascii=False))
+            data.append(sql)
+        # print(json.dumps(data, cls=CJsonEncoder, ensure_ascii=False, indent=2))
+
+
+
 
     # 3.输出json文件
     temp_data = {
@@ -288,6 +455,7 @@ def starup(**kwargs):
     # 4. 渲染报告
     report = GetReport(**temp_data)
     report.maker(kwargs['host'],kwargs['out_dir'])
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='''PostgreSQL 库表统计报告小工具
@@ -311,9 +479,11 @@ Example：
 
     args = parser.parse_args()
     if args.Info == 'all':
-        info = ['connnections','age_large','select_age','index_large','unuse_index','partition_table', 'expand','refuse']
+        info = ['connnections','data_age','data_size','surface_expansion','index_inflation','unused_index','unused_query_table','hot_table','cold_table','hot_index','cold_index','table_full_count','table_full_rows']
     elif len(args.Info.split(',')):
         info = args.Info.split(',')
+
+
     params = {
         'info': info,
         'engine': args.Engine.lower(),
