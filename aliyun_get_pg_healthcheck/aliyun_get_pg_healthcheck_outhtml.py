@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-输出目标 MySQL 数据库健康报告
+输出目标 PostgreSQL 数据库健康报告
 """
 # Build-in Modules
 import json
