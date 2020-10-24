@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.4.1/dist/css/bootstrap.min.css"
+          integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+
+    <style type="text/css">
+        .app-page-title {
+            padding-top: 60px;
+            flex: 1;
+            display: flex;
+            z-index: 8;
+            position: relative
+        }
+
+        .page-title-icon {
+            font-size: 2rem;
+            display: flex;
+            align-items: center;
+            align-content: center;
+            text-align: center;
+            padding: .83333rem;
+            margin: 0 30px 0 0;
+            background: #fff;
+            box-shadow: 0 0.46875rem 2.1875rem rgba(4, 9, 20, 0.03), 0 0.9375rem 1.40625rem rgba(4, 9, 20, 0.03), 0 0.25rem 0.53125rem rgba(4, 9, 20, 0.05), 0 0.125rem 0.1875rem rgba(4, 9, 20, 0.03);
+            border-radius: .25rem;
+            width: 60px;
+            height: 60px
+        }
+
+        .page-title-subheading {
+            padding: 3px 0 0;
+            font-size: .88rem;
+            opacity: .6
+        }
+
+        .page-title-heading {
+            font-size: 1.25rem;
+            font-weight: 400;
+
+        }
+
+        .table-title-heading {
+            font-size: .5rem;
+            opacity: .9
+        }
+
+        .table-title-subheading {
+            font-size: .5rem;
+            opacity: .6
+        }
+
+        .card-header {
+            padding: 10px 10px 10px;
+            font-size: .5rem;
+            opacity: .6;
+            font-family: verdana;
+        }
+
+    </style>
+</head>
+
+
+<body>
+<div class="container-fluid">
+    <div class="app-page-title">
+        <div class="row">
+            <div class="col col-2">
+                <div class="page-title-icon">
+                    <svg t="1584605510076" class="icon" viewBox="0 0 1024 1024" version="1.1"
+                         xmlns="http://www.w3.org/2000/svg" p-id="1171" width="200" height="200">
+                        <path d="M312.1 591.5c3.1 3.1 8.2 3.1 11.3 0l101.8-101.8 86.1 86.2c3.1 3.1 8.2 3.1 11.3 0l226.3-226.5c3.1-3.1 3.1-8.2 0-11.3l-36.8-36.8c-3.1-3.1-8.2-3.1-11.3 0L517 485.3l-86.1-86.2c-3.1-3.1-8.2-3.1-11.3 0L275.3 543.4c-3.1 3.1-3.1 8.2 0 11.3l36.8 36.8z"
+                              p-id="1172"></path>
+                        <path d="M904 160H548V96c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v64H120c-17.7 0-32 14.3-32 32v520c0 17.7 14.3 32 32 32h356.4v32L311.6 884.1c-3.7 2.4-4.7 7.3-2.3 11l30.3 47.2v0.1c2.4 3.7 7.4 4.7 11.1 2.3L512 838.9l161.3 105.8c3.7 2.4 8.7 1.4 11.1-2.3v-0.1l30.3-47.2c2.4-3.7 1.3-8.6-2.3-11L548 776.3V744h356c17.7 0 32-14.3 32-32V192c0-17.7-14.3-32-32-32z m-40 512H160V232h704v440z"
+                              p-id="1173"></path>
+                    </svg>
+
+                </div>
+            </div>
+            <div class="col">
+                <div class="page-title-heading">
+                    阿里云 PolarDB集群 慢日志日报
+                    <div class="page-title-subheading">AliYun PolarDB Cluster Slow Log Daily Report
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+        
+    <div class="app-page-title">
+        <div class="row col-12">
+            <div class="col-md-12">
+                <div class="main-card mb-3 card">
+                    <div class="card-header"> PolarDB 集群ID： 每日慢SQL TOP 10 明细
+                    </div>
+                    <div class="table-responsive">
+                        <table class="align-middle mb-0 table table-borderless table-striped table-hover">
+                            <thead>
+                            <tr>
+                                <th class="text-center table-title-heading">序号</th>
+                                <th class="text-center table-title-heading">集群ID</th>
+                                <th class="text-center table-title-heading">节点ID</th>
+                                <th class="text-center table-title-heading">数据库</th>
+                                <th class="text-center table-title-heading">执行用户和地址</th>
+                                <th class="text-center table-title-heading">执行次数</th>
+                                <th class="text-center table-title-heading">执行时间</th>
+                                <th class="text-center table-title-heading">慢查询</th>
+                            </tr>
+                            </thead>
+                                    
+
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.slim.min.js"
+            integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n"
+            crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+            integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+            crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.4.1/dist/js/bootstrap.min.js"
+            integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
+            crossorigin="anonymous"></script>
+    </div>
+</div>
+</body>
+</html>

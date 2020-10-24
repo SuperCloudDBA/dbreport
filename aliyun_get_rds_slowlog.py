@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================================
+修改于2019-09-18（by ruijie.qiao）: 添加API STS请求验证功能。
+需要更新库版本至最新版本（version:0.0.5）: pip3 all --upgrade zy-aliyun-python-sdk
 请求参数案例1（默认AK传空值为STS Token验证方式，RoleName为空的默认值为ZhuyunFullReadOnlyAccess）:
         'AccessKeyId': None,
         'AccessKeySecret': None,
@@ -234,15 +236,18 @@ class GetReport:
                     </div>
                     <div class="table-responsive">
                         <table class="align-middle mb-0 table table-borderless table-striped table-hover">
-                            <thead>
+                           <thead>
                             <tr>
                                 <th class="text-center table-title-heading">序号</th>
                                 <th class="text-center table-title-heading">实例ID</th>
                                 <th class="text-center table-title-heading">数据库</th>
                                 <th class="text-center table-title-heading">执行用户和地址</th>
-                                <th class="text-center table-title-heading">执行次数</th>
-                                <th class="text-center table-title-heading">执行时间</th>
-                                <th class="text-center table-title-heading">慢查询</th>
+                                <th class="text-center table-title-heading">总执行次数</th>
+                                <th class="text-center table-title-heading">总执行时长 秒</th>
+                                <th class="text-center table-title-heading">最大执行时长 秒</th>
+                                <th class="text-center table-title-heading">解析SQL最大行数</th>
+                                <th class="text-center table-title-heading">返回SQL最大行数</th>
+                                <th class="text-center table-title-heading" width="1000">慢查询</th>
                             </tr>
                             </thead>
                                     {% for sql in sql_list %}
@@ -253,23 +258,10 @@ class GetReport:
                                             <td class="text-center table-title-subheading">{{ sql.HostAddress }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.MySQLTotalExecutionCounts or sql.SQLServerTotalExecutionCounts }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.MySQLTotalExecutionTimes or sql.SQLServerTotalExecutionTimes }}</td>
-                                            <td class="text-center table-title-subheading">
-                                                <div class="accordion" id="accordionExample">
-                                                    <h2 class="mb-0">
-                                                        <button class="btn btn-link btn-block text-left collapsed table-title-subheading"
-                                                                type="button" data-toggle="collapse"
-                                                                data-target="#collapseThree" aria-expanded="false"
-                                                                aria-controls="collapseThree">
-                                                            {{ sql.SQLText |truncate(30) }}
-                                                        </button>
-                                                    </h2>
-            
-                                                    <div id="collapseThree" class="collapse" aria-labelledby="headingThree"
-                                                         data-parent="#accordionExample">
-                                                            {{ sql.SQLText }}
-                                                    </div>
-                                                </div>
-                                            </td>
+                                            <td class="text-center table-title-subheading">{{ sql.MaxExecutionTime }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ParseMaxRowCount }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ReturnMaxRowCount }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.SQLText }}</td>
                                         </tr>
                                     {% endfor %}
 
@@ -411,7 +403,7 @@ Example：
     python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --OutDir ./ --Region all --Engine all
     支持指定 地域、存储引擎（MySQL, SQLServer, PostgreSQL, PPAS, MariaDB）、数据库实例ID
 获取某实例某库的每日慢查询报告
-    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --OutDir ./ --DBInstanceId DBInstanceId --DBName dbname1,dbname2
+    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --OutDir ./ --DBInstanceId --DBName dbname1,dbname2
 ''', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--AccessKeyId", help="AccessKeyId 非必要参数")
     parser.add_argument("--AccessKeySecret", help="AccessKeySecret 非必要参数")

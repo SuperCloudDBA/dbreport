@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 ==========================================================================================
+修改于2019-09-18（by ruijie.qiao）: 添加API STS请求验证功能。
+需要更新库版本至最新版本（version:0.0.5）: pip3 all --upgrade zy-aliyun-python-sdk
 请求参数案例1（默认AK传空值为STS Token验证方式，RoleName为空的默认值为ZhuyunFullReadOnlyAccess）:
         'AccessKeyId': None,
         'AccessKeySecret': None,
@@ -259,8 +261,11 @@ class GetReport:
                                 <th class="text-center table-title-heading">实例ID</th>
                                 <th class="text-center table-title-heading">数据库</th>
                                 <th class="text-center table-title-heading">执行用户和地址</th>
-                                <th class="text-center table-title-heading">执行次数</th>
-                                <th class="text-center table-title-heading">执行时间</th>
+                                <th class="text-center table-title-heading">总执行次数</th>
+                                <th class="text-center table-title-heading">总执行时长 秒</th>
+                                <th class="text-center table-title-heading">最大执行时长 秒</th>
+                                <th class="text-center table-title-heading">解析SQL最大行数</th>
+                                <th class="text-center table-title-heading">返回SQL最大行数</th>
                                 <th class="text-center table-title-heading" width="1000">慢查询</th>
                             </tr>
                             </thead>
@@ -272,6 +277,9 @@ class GetReport:
                                             <td class="text-center table-title-subheading">{{ sql.HostAddress }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.MySQLTotalExecutionCounts or sql.SQLServerTotalExecutionCounts }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.MySQLTotalExecutionTimes or sql.SQLServerTotalExecutionTimes }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.MaxExecutionTime }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ParseMaxRowCount }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ReturnMaxRowCount }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.SQLText }}</td>
                                         </tr>
                                     {% endfor %}
@@ -410,9 +418,9 @@ class GetReport:
 
 class CloudCareMail:
     def __init__(self, **kwargs):
-        self.from_user = "operator@xxx.com"
-        self.to_users = kwargs['to_users']
-        self.host = "smtp.xxx.com"
+        self.from_user = "operator@jiagouyun.com"
+        self.to_users = kwargs['to_users']  # list
+        self.host = "smtp.jiagouyun.com"
         self.tbody = kwargs['tbody']
         self.msg = MIMEMultipart('related')
         self.InstanceId = kwargs['InstanceId']
@@ -428,7 +436,7 @@ class CloudCareMail:
         self.msg.attach(msgtext)
         self.msg['Subject'] = self.get_subject()
         self.msg['From'] = self.from_user
-        self.msg['To'] = self.to_users
+        self.msg['To'] = ','.join(self.to_users)
         try:
             server = smtplib.SMTP_SSL(host=self.host)
             server.connect(self.host, port="465")
@@ -445,12 +453,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='''阿里云RDS实例每日慢查询报告小工具，并邮件发送
 Example：
 获取所有地域RDS实例的每日慢查询报告
-    python3 aliyun_get_rds_slowlog.py --RoleName RoleName --DBInstanceId DBInstanceId --DBName dbname1,dbname2 --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
-    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
-    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --Region all --Engine all --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
+    python3 aliyun_get_rds_slowlog.py --RoleName RoleName --DBInstanceId DBInstanceId --DBName dbname1,dbname2 --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag TestAIA
+    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag TestAIA
+    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --Region all --Engine all --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag TestAIA
     支持指定 地域、存储引擎（MySQL, SQLServer, PostgreSQL, PPAS, MariaDB）、数据库实例ID
 获取某实例某库的每日慢查询报告
-    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --DBInstanceId DBInstanceId --DBName dbname1,dbname2 --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
+    python3 aliyun_get_rds_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --DBInstanceId --DBName dbname1,dbname2 --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag TestAIA
 ''', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--AccessKeyId", help="AccessKeyId 非必要参数")
     parser.add_argument("--AccessKeySecret", help="AccessKeySecret 非必要参数")
@@ -516,7 +524,7 @@ us-east-1 : 单个地域
             'filter_instance': False if args.DBInstanceId == 'all' else True,
             'DBInstanceIds': args.DBInstanceId.split(','),
             'DBNames': db_names,
-            'to_users': args.ToUsers,
+            'to_users': args.ToUsers.split(','),
             'tag': args.Tag,
         }
         api.start_up(**main_kwargs)

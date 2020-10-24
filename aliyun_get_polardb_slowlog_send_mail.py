@@ -28,7 +28,6 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-
 StartTime = (datetime.datetime.now() - datetime.timedelta(hours=24)).strftime("%Y-%m-%dZ")
 EndTime = (datetime.datetime.now() - datetime.timedelta(hours=0)).strftime("%Y-%m-%dZ")
 
@@ -58,7 +57,7 @@ class Custom:
         2. 再过滤出指定的数据库类型。
         """
         instance_list = []
-
+        # print(common_region_ids)
         for region_id in common_region_ids:
             page_num = 1
             while True:
@@ -68,6 +67,7 @@ class Custom:
                                                               RegionId=region_id,
                                                               PageSize=100,
                                                               PageNumber=page_num)
+                    # print(json.dumps(api_res, indent=2))
                 except Exception as e:
                     print(str(e))
 
@@ -104,14 +104,17 @@ class Custom:
 
     def get_describe_slow_logs(self, **kwargs):
         """
-        调用该接口时，集群必须为MySQL 5.6或8.0版本。
+        https://api.aliyun.com/?spm=5176.13787420.nav-right.14.77583109jAOSIM#/?product=polardb&version=2017-08-01&api=DescribeSlowLogs&tab=DOC&lang=PYTHON
+        调用DescribeSlowLogs接口查询PolarDB集群的慢日志统计信息。
+        调用该接口时，PolarDB集群版本需为PolarDB MySQL 5.6、5.7或8.0。
         获取PolarDB集群慢查询
         kwargs = {
         "DBClusterId": "",
         "RegionId,"",
         "EndTime":"",
         "StartTime":"",
-        "SortKey":""
+        "SortKey":"",
+        "DBName":"",
         }
 
         """
@@ -141,6 +144,7 @@ class Custom:
         """
         try:
             status_code, api_res = self.aliyun.common("polardb", Action="DescribeSlowLogRecords", **kwargs)
+
         except Exception as e:
             print(str(e))
             print("获取PolarDB慢查询")
@@ -177,14 +181,19 @@ class Custom:
 
         # 2 获取慢查询信息
         # 2.1 获取已过滤的实例的慢查询
+        s_time = (datetime.datetime.now() - datetime.timedelta(hours=24)).strftime("%Y-%m-%dZ")
+        e_time = (datetime.datetime.now() - datetime.timedelta(hours=0)).strftime("%Y-%m-%dZ")
+        # s_time = "2020-10-21Z"
+        # e_time = "2020-10-22Z"
         params = list(map(
             lambda x:
             {
                 "DBClusterId": x["DBClusterId"],
                 "RegionId": x["RegionId"],
-                "StartTime": (datetime.datetime.now() - datetime.timedelta(hours=124)).strftime("%Y-%m-%dZ"),
-                "EndTime": (datetime.datetime.now() - datetime.timedelta(hours=0)).strftime("%Y-%m-%dZ"),
-                "SortKey": "TotalExecutionCounts"
+                "StartTime": s_time,
+                "EndTime": e_time,
+                "SortKey": "TotalExecutionCounts",
+                "DBName": kwargs["DBName"],
             }, filter_instance_list
 
         ))
@@ -214,7 +223,7 @@ class Custom:
                         _sql['HostAddress'] = hash_response['Items']['SQLSlowRecord'][0]["HostAddress"]
                     else:
                         _sql['HostAddress'] = ''
-                        print(json.dumps(hash_response))
+                    # print(json.dumps(hash_response))
 
                 slow_log = {
                     "DBClusterId": ins_params['DBClusterId'],
@@ -250,57 +259,81 @@ class GetReport:
 
     def render_template(self):
         template_data = """    <div class="app-page-title">
-        <div class="row col-12">
-            <div class="col-md-12">
-                <div class="main-card mb-3 card">
-                    <div class="card-header"> PolarDB 集群ID：{{ DBClusterId }} 每日慢SQL TOP 10 明细
-                    </div>
-                    <div class="table-responsive">
-                        <table class="align-middle mb-0 table table-borderless table-striped table-hover">
-                            <thead>
-                            <tr>
-                                <th class="text-center table-title-heading">序号</th>
-                                <th class="text-center table-title-heading">集群ID</th>
-                                <th class="text-center table-title-heading">节点ID</th>
-                                <th class="text-center table-title-heading">执行用户和地址</th>
-                                <th class="text-center table-title-heading">执行次数</th>
-                                <th class="text-center table-title-heading">执行时间</th>
-                                <th class="text-center table-title-heading" width="1000">慢查询</th>
-                            </tr>
-                            </thead>
-                                    {% for sql in sql_list %}
-                                        <tr>
-                                            <td class="text-center table-title-subheading">{{ loop.index }}</td>
-                                            <td class="text-center table-title-subheading">{{ DBClusterId }}</td>
-                                            <td class="text-center table-title-subheading">{{ sql.DBNodeId }}</td>
-                                            <td class="text-center table-title-subheading">{{ sql.HostAddress }}</td>
-                                            <td class="text-center table-title-subheading">{{ sql.TotalExecutionCounts }}</td>
-                                            <td class="text-center table-title-subheading">{{ sql.MaxExecutionTime }}</td>
-                                            <td class="text-center table-title-subheading">{{ sql.SQLText }}</td>
-                                        </tr>
-                                    {% endfor %}
+            <div class="row col-12">
+                <div class="col-md-12">
+                    <div class="main-card mb-3 card">
+                        <div class="card-header"> PolarDB 集群ID：{{ DBClusterId }} 每日慢SQL TOP 10 明细
+                        </div>
+                        <div class="table-responsive">
+                            <table class="align-middle mb-0 table table-borderless table-striped table-hover">
+                                <thead>
+                                <tr>
+                                    <th class="text-center table-title-heading">序号</th>
+                                    <th class="text-center table-title-heading">集群ID</th>
+                                    <th class="text-center table-title-heading">节点ID</th>
+                                    <th class="text-center table-title-heading">数据库</th>
+                                    <th class="text-center table-title-heading">执行用户和地址</th>
+                                    <th class="text-center table-title-heading">总执行次数</th>
+                                    <th class="text-center table-title-heading">总执行时长 秒</th>
+                                    <th class="text-center table-title-heading">最大执行时长 秒</th>
+                                    <th class="text-center table-title-heading">解析SQL最大行数</th>
+                                    <th class="text-center table-title-heading">返回SQL最大行数</th>
+                                    <th class="text-center table-title-heading">慢查询</th>
+                                </tr>
+                                </thead>
+                                        {% for sql in sql_list %}
+                                            <tr>
+                                                <td class="text-center table-title-subheading">{{ loop.index }}</td>
+                                                <td class="text-center table-title-subheading">{{ DBClusterId }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.DBNodeId }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.DBName }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.HostAddress }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.TotalExecutionCounts }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.TotalExecutionTimes }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.MaxExecutionTime }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.ParseMaxRowCount }}</td>
+                                                <td class="text-center table-title-subheading">{{ sql.ReturnMaxRowCount }}</td>
+                                                <td class="text-center table-title-subheading">
+                                                    <div class="accordion" id="accordionExample">
+                                                        <h2 class="mb-0">
+                                                            <button class="btn btn-link btn-block text-left collapsed table-title-subheading"
+                                                                    type="button" data-toggle="collapse"
+                                                                    data-target="#collapseThree" aria-expanded="false"
+                                                                    aria-controls="collapseThree">
+                                                                {{ sql.SQLText |truncate(30) }}
+                                                            </button>
+                                                        </h2>
 
-                                </table>
+                                                        <div id="collapseThree" class="collapse" aria-labelledby="headingThree"
+                                                             data-parent="#accordionExample">
+                                                                {{ sql.SQLText }}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+            <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.slim.min.js"
+                integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n"
+                crossorigin="anonymous"></script>
+            <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+                integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+                crossorigin="anonymous"></script>
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.4.1/dist/js/bootstrap.min.js"
+                integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
+                crossorigin="anonymous"></script>
         </div>
-        <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1/dist/jquery.slim.min.js"
-            integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n"
-            crossorigin="anonymous"></script>
-        <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
-            integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
-            crossorigin="anonymous"></script>
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.4.1/dist/js/bootstrap.min.js"
-            integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6"
-            crossorigin="anonymous"></script>
     </div>
-</div>
-</body>
-</html>
-"""
+    </body>
+    </html>
+    """
 
         template = Template(template_data)
         return template.render(**self.render_data)
@@ -413,9 +446,9 @@ class GetReport:
 
 class CloudCareMail:
     def __init__(self, **kwargs):
-        self.from_user = "xxx@xxx.com"
-        self.to_users = kwargs['to_users']
-        self.host = "smtp.xxx.com"
+        self.from_user = "operator@jiagouyun.com"
+        self.to_users = kwargs['to_users']  # list
+        self.host = "smtp.jiagouyun.com"
         self.tbody = kwargs['tbody']
         self.msg = MIMEMultipart('related')
         self.InstanceId = kwargs['InstanceId']
@@ -431,7 +464,7 @@ class CloudCareMail:
         self.msg.attach(msgtext)
         self.msg['Subject'] = self.get_subject()
         self.msg['From'] = self.from_user
-        self.msg['To'] = self.to_users
+        self.msg['To'] = ','.join(self.to_users)
         try:
             server = smtplib.SMTP_SSL(host=self.host)
             server.connect(self.host, port="465")
@@ -451,7 +484,7 @@ Example：
     python3 aliyun_get_polardb_slowlog.py --RoleName RoleName --DBInstanceId DBInstanceId --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
     python3 aliyun_get_polardb_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test 
     python3 aliyun_get_polardb_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --Region all --Engine all --ToUsers xxx@hotmail.com,xxx@hotmail.com --Tag Test
-    支持指定 地域、存储引擎（MySQL, PostgreSQL, Oracle）、数据库实例ID PolarDB不支持到库级别的过滤（阿里云API没有该功能）
+    支持指定 地域、存储引擎（MySQL, PostgreSQL, Oracle）、数据库实例ID 、支持单库过滤
 ''', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--AccessKeyId", help="AccessKeyId 非必要参数")
     parser.add_argument("--AccessKeySecret", help="AccessKeySecret 非必要参数")
@@ -472,6 +505,8 @@ us-east-1 : 单个地域
     parser.add_argument("--DBClusterId", default='all', help='''数据库集群ID 默认为all
     rr-bp1d96998y68h5439,rm-bp1l20jmw5p587zl2 : 多个集群用逗号分割
     rr-bp1d96998y68h5439 : 单个集群''')
+    parser.add_argument("--DBName", help='''数据库名 非必要参数，如果指定必须与 --DBClusterId 单实例
+        db1 : 单个库''')
     parser.add_argument("--ToUsers", help='邮件接收者必要参数 a@hotmail.com,b@hotmail.com')
     parser.add_argument("--Tag", help='Tag')
     parser.add_argument("--Client", default='我的公司', help='指定公司名称，作为邮件标题的前缀，默认为 我的公司')
@@ -501,12 +536,19 @@ us-east-1 : 单个地域
         elif len(args.Engine.split(',')):
             db_engines = args.Engine.split(',')
 
+        if args.DBName and (len(args.DBClusterId.split(',')) > 1 or args.DBClusterId == 'all'):
+            print('数据库名 非必要参数，如果指定必须与 --DBInstanceId 单实例 同时使用')
+            exit()
+        else:
+            db_name = args.DBName.split(',')[0] if args.DBName else ''
+
         main_kwargs = {
             'common_region_ids': common_region_ids,
             'db_engines': db_engines,
             'filter_instance': False if args.DBClusterId == 'all' else True,
             'DBClusterIds': args.DBClusterId.split(','),
-            'to_users': args.ToUsers,
+            'DBName': db_name,
+            'to_users': args.ToUsers.split(','),
             'tag': args.Tag,
         }
 

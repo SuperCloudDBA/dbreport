@@ -97,14 +97,17 @@ class Custom:
 
     def get_describe_slow_logs(self, **kwargs):
         """
-        调用该接口时，集群必须为MySQL 5.6或8.0版本。
+        https://api.aliyun.com/?spm=5176.13787420.nav-right.14.77583109jAOSIM#/?product=polardb&version=2017-08-01&api=DescribeSlowLogs&tab=DOC&lang=PYTHON
+        调用DescribeSlowLogs接口查询PolarDB集群的慢日志统计信息。
+        调用该接口时，PolarDB集群版本需为PolarDB MySQL 5.6、5.7或8.0。
         获取PolarDB集群慢查询
         kwargs = {
         "DBClusterId": "",
         "RegionId,"",
         "EndTime":"",
         "StartTime":"",
-        "SortKey":""
+        "SortKey":"",
+        "DBName":"",
         }
 
         """
@@ -134,6 +137,7 @@ class Custom:
         """
         try:
             status_code, api_res = self.aliyun.common("polardb", Action="DescribeSlowLogRecords", **kwargs)
+            # print(json.dumps(api_res, indent=2))
         except Exception as e:
             print(str(e))
             print("获取PolarDB慢查询")
@@ -156,6 +160,7 @@ class Custom:
         else:
             return []
 
+
     def start_up(self, **kwargs):
         # 1.获取实例
         # 1.1 按照地域和数据库引擎过滤实例ID
@@ -177,7 +182,8 @@ class Custom:
                 "RegionId": x["RegionId"],
                 "StartTime": (datetime.datetime.now() - datetime.timedelta(hours=24)).strftime("%Y-%m-%dZ"),
                 "EndTime": (datetime.datetime.now() - datetime.timedelta(hours=0)).strftime("%Y-%m-%dZ"),
-                "SortKey": "TotalExecutionCounts"
+                "SortKey": "TotalExecutionCounts",
+                "DBName": kwargs["DBName"],
             }, filter_instance_list
 
         ))
@@ -189,9 +195,6 @@ class Custom:
                 sql_list = self.get_top_10(response)
 
                 # print(sql_list)
-                # 目前PolarDB与RDS接口返回值不一致，返回key中不包含SQLHASH
-                # 通过 SQLHASH 获取SQL的执行账号和客户端
-                # 'SQLHASH': '18122c83b8203a7028a0e3c92b88bc3a'
                 for _sql in sql_list:
                     sql_hash = {
                         "DBClusterId": ins_params['DBClusterId'],
@@ -203,11 +206,12 @@ class Custom:
                     }
                     # print(json.dumps(sql_hash))
                     hash_response = self.get_describe_slow_log_records(**sql_hash)
+                    # print(json.dumps(hash_response, indent=2))
                     if hash_response.get('Items', {}).get('SQLSlowRecord', []):
                         _sql['HostAddress'] = hash_response['Items']['SQLSlowRecord'][0]["HostAddress"]
                     else:
                         _sql['HostAddress'] = ''
-                        print(json.dumps(hash_response))
+                    # print(json.dumps(hash_response))
 
                 slow_log = {
                     "DBClusterId": ins_params['DBClusterId'],
@@ -243,9 +247,13 @@ class GetReport:
                                 <th class="text-center table-title-heading">序号</th>
                                 <th class="text-center table-title-heading">集群ID</th>
                                 <th class="text-center table-title-heading">节点ID</th>
+                                <th class="text-center table-title-heading">数据库</th>
                                 <th class="text-center table-title-heading">执行用户和地址</th>
-                                <th class="text-center table-title-heading">执行次数</th>
-                                <th class="text-center table-title-heading">执行时间</th>
+                                <th class="text-center table-title-heading">总执行次数</th>
+                                <th class="text-center table-title-heading">总执行时长 秒</th>
+                                <th class="text-center table-title-heading">最大执行时长 秒</th>
+                                <th class="text-center table-title-heading">解析SQL最大行数</th>
+                                <th class="text-center table-title-heading">返回SQL最大行数</th>
                                 <th class="text-center table-title-heading">慢查询</th>
                             </tr>
                             </thead>
@@ -254,9 +262,13 @@ class GetReport:
                                             <td class="text-center table-title-subheading">{{ loop.index }}</td>
                                             <td class="text-center table-title-subheading">{{ DBClusterId }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.DBNodeId }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.DBName }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.HostAddress }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.TotalExecutionCounts }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.TotalExecutionTimes }}</td>
                                             <td class="text-center table-title-subheading">{{ sql.MaxExecutionTime }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ParseMaxRowCount }}</td>
+                                            <td class="text-center table-title-subheading">{{ sql.ReturnMaxRowCount }}</td>
                                             <td class="text-center table-title-subheading">
                                                 <div class="accordion" id="accordionExample">
                                                     <h2 class="mb-0">
@@ -399,6 +411,7 @@ class GetReport:
         """
         html_string_1 = self.render_template()
         # print('\n'.join([html_string_0, html_string_1]))
+        # print(self.render_data)
         file_name = 'report-{instance}-{time_string}.html'.format(instance=self.render_data['DBClusterId'],
                                                                   time_string=time.strftime('%Y%m%d%H%M%S',
                                                                                             time.localtime(
@@ -413,7 +426,7 @@ Example：
 获取所有地域PolarDB集群的每日慢查询报告
     python3 aliyun_get_polardb_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --OutDir ./
     python3 aliyun_get_polardb_slowlog.py --AccessKeyId ACCESSKEYID --AccessKeySecret ACCESSKEYSECRET --OutDir ./ --Region all --Engine all
-    支持指定 地域、存储引擎（MySQL, PostgreSQL, Oracle）、数据库实例ID PolarDB不支持到库级别的过滤（阿里云API没有该功能）
+    支持指定 地域、存储引擎（MySQL, PostgreSQL, Oracle）、数据库实例ID 、支持单库过滤
 ''', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--AccessKeyId", help="AccessKeyId 非必要参数")
     parser.add_argument("--AccessKeySecret", help="AccessKeySecret 非必要参数")
@@ -435,6 +448,8 @@ us-east-1 : 单个地域
     parser.add_argument("--DBClusterId", default='all', help='''数据库集群ID 默认为all
     rr-bp1d96998y68h5439,rm-bp1l20jmw5p587zl2 : 多个集群用逗号分割
     rr-bp1d96998y68h5439 : 单个集群''')
+    parser.add_argument("--DBName", help='''数据库名 非必要参数，如果指定必须与 --DBClusterId 单实例
+        db1 : 单个库''')
 
     args = parser.parse_args()
 
@@ -460,12 +475,18 @@ us-east-1 : 单个地域
         elif len(args.Engine.split(',')):
             db_engines = args.Engine.split(',')
 
+        if args.DBName and (len(args.DBClusterId.split(',')) > 1 or args.DBClusterId == 'all'):
+            print('数据库名 非必要参数，如果指定必须与 --DBInstanceId 单实例 同时使用')
+            exit()
+        else:
+            db_name = args.DBName.split(',')[0] if args.DBName else ''
 
         main_kwargs = {
             'common_region_ids': common_region_ids,
             'db_engines': db_engines,
             'filter_instance': False if args.DBClusterId == 'all' else True,
             'DBClusterIds': args.DBClusterId.split(','),
+            'DBName': db_name,
             'out_dir': args.OutDir,
         }
 
