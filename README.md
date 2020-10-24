@@ -25,6 +25,8 @@
 |[aliyun_get_polardb_slowlog_send_mail](aliyun_get_polardb_slowlog_send_mail.py)|阿里云PolarDB集群每日慢查询报告小工具，并邮件发送|
 |[get_mysql_size_info](get_mysql_size_info.py)|MySQL库表统计报告小工具|
 |[get_sqlserver_size_info](get_sqlserver_size_info.py)|SQLServer 库表统计报告小工具|
+|[aliyun_get_pg_healthcheck](aliyun_get_pg_healthcheck)|PostgreSQL每日巡检小工具|
+|[aliyun_get_mysql_healthcheck](aliyun_get_mysql_healthcheck)|MySQL每日巡检小工具|
 
 
 # 关于我们
