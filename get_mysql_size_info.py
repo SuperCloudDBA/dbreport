@@ -258,7 +258,7 @@ def starup(**kwargs):
     # 1.根据传递的参数对报告后端逻辑进行过滤
     info_api = GetInfo()
     sql_list = info_api.get_info(kwargs['engine'], kwargs["info"])
-    # print(json.dumps(sql_list, indent=2, ensure_ascii=False))
+    print(json.dumps(sql_list, indent=2, ensure_ascii=False))
 
     # 2.获取待渲染的报告数据
     sql_api = MysqlHelper(**params)
@@ -296,16 +296,20 @@ Example：
     parser.add_argument("--Password", help="Password 必要参数")
     parser.add_argument("--DBName", help="DBName 必要参数")
     parser.add_argument("--Info", default='all',
-                        help='''Info 非必要参数，默认all，也可单独指定例如 db_size 或 db_size,table_size; 多个使用逗号分割 db_size:获取mssql表空间统计 table_size:获取mssql表空间统计''')
+                        help='''Info 非必要参数，默认all，也可单独指定例如 db_size 或 db_size,table_size; 多个使用逗号分割''')
     parser.add_argument("--OutDir", help="输出目录 必要参数 需要提前创建该目录")
 
     args = parser.parse_args()
+
+    if not args.OutDir:
+        print("请指定输出目录")
+        exit()
     if args.Info == 'all':
         info = ['db_size', 'table_size']
     elif len(args.Info.split(',')):
         info = args.Info.split(',')
     params = {
-        'info': args.Info,
+        'info': info,
         'engine': args.Engine.lower(),
         'host': args.Host,
         'port': args.Port,
@@ -314,9 +318,9 @@ Example：
         'dbname': args.DBName,
         'out_dir': args.OutDir,
     }
+    print(params)
 
     if args.Engine.lower() == 'MySQL'.lower():
         starup(**params)
     else:
         print('请选择 MySQL 类型的数据库。')
-
